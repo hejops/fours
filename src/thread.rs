@@ -109,6 +109,13 @@ impl Display for Thread {
         &self,
         f: &mut std::fmt::Formatter<'_>,
     ) -> std::fmt::Result {
+        let url = format!(
+            "https://boards.4chan.org/{}/thread/{}",
+            self.board, self.thread
+        );
+
+        writeln!(f, "{}", string::leftpad(&url))?;
+
         for post in self.posts.iter() {
             writeln!(f, "{}", string::leftpad(&post.no.to_string()))?;
 
@@ -124,6 +131,9 @@ impl Display for Thread {
                 )?;
             }
         }
+
+        writeln!(f, "{}", string::leftpad(&url))?;
+
         Ok(())
     }
 }
