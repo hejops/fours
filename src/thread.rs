@@ -110,6 +110,12 @@ impl Display for Thread {
         f: &mut std::fmt::Formatter<'_>,
     ) -> std::fmt::Result {
         for post in self.posts.iter() {
+            writeln!(f, "{}", string::leftpad(&post.no.to_string()))?;
+
+            if let Some(tim) = &post.tim {
+                writeln!(f, "https://i.4cdn.org/{}/{}.jpg", self.board, tim)?;
+            }
+
             if post.com.is_some() {
                 writeln!(
                     f,
@@ -117,10 +123,6 @@ impl Display for Thread {
                     string::selective_wrap(&post.decode().ok_or(std::fmt::Error)?),
                 )?;
             }
-            if let Some(tim) = &post.tim {
-                writeln!(f, "https://i.4cdn.org/{}/{}.jpg", self.board, tim)?;
-            }
-            writeln!(f, "{}", string::leftpad(&post.no.to_string()))?;
         }
         Ok(())
     }
