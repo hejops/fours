@@ -99,6 +99,8 @@ impl Thread {
         write!(f, "{}", self)?;
         Ok(())
     }
+
+    // TODO: update (fetch new posts)
 }
 
 impl Display for Thread {
@@ -147,6 +149,7 @@ struct Page {
 // https://serde.rs/container-attrs.html#transparent
 #[serde(transparent)]
 /// Array of pages.
+// TODO: flatten pages? i.e. single unnested Vec<Post>
 pub struct Catalog {
     pages: Vec<Page>,
 }
@@ -164,7 +167,8 @@ impl Catalog {
             if let Some(post) = page
                 .threads
                 .iter()
-                .find(|post| post.sub.as_ref().unwrap().contains(subject))
+                // meh
+                .find(|post| post.sub.is_some() && post.sub.as_ref().unwrap().contains(subject))
             {
                 return Thread::new(board.to_string(), post.no).ok();
             }
