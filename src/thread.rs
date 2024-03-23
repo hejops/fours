@@ -100,6 +100,22 @@ impl Thread {
         Ok(())
     }
 
+    // https://github.com/arijit79/minus/blob/main/examples/less-rs.rs
+    pub fn page(&self) -> Result<()> {
+        let output = minus::Pager::new();
+        let changes = || {
+            output.push_str(self.to_string())?;
+            // i have no idea what this syntax is
+            Result::<()>::Ok(())
+        };
+
+        let pager = output.clone();
+        let result = std::thread::spawn(|| minus::dynamic_paging(pager));
+        changes()?;
+        result.join().unwrap()?;
+        Ok(())
+    }
+
     // TODO: update (fetch new posts)
 }
 
