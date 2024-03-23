@@ -137,3 +137,38 @@ impl Display for Thread {
         Ok(())
     }
 }
+
+#[derive(Debug, Deserialize)]
+struct Page {
+    threads: Vec<Post>,
+}
+
+#[derive(Debug, Deserialize)]
+// https://serde.rs/container-attrs.html#transparent
+#[serde(transparent)]
+/// Array of pages.
+pub struct Catalog {
+    pages: Vec<Page>,
+}
+
+impl Catalog {
+    pub fn find_thread(
+        subject: &str,
+        board: &str,
+    ) -> Option<Thread> {
+        let url = format!("https://a.4cdn.org/{}/catalog.json", board);
+        let resp = reqwest::blocking::get(url).ok()?.text().ok()?;
+        let cat: Catalog = serde_json::from_str(&resp).ok()?;
+
+        for page in cat.pages {
+            if let Some(post) = page
+                .threads
+                .iter()
+                .find(|post| post.sub.as_ref().unwrap().contains(subject))
+            {
+                return Thread::new(board.to_string(), post.no).ok();
+            }
+        }
+        None
+    }
+}
