@@ -1,5 +1,6 @@
 use core::panic;
 
+use anyhow::Context;
 use anyhow::Result;
 use clap::Parser;
 use fours::thread::Catalog;
@@ -31,12 +32,14 @@ struct Args {
 fn main() -> Result<()> {
     let args = Args::parse();
     let thread = {
-        if let Some(id) = args.id {
-            Thread::new(args.board, id).ok()
-        } else if let Some(subject) = args.subject {
-            Catalog::find_thread(&subject, &args.board)
-        } else {
-            panic!()
+        // there is probably a better way to use match with an enum (e.g.
+        // Query::Subject)
+        match args {
+            Args {
+                subject: Some(subject),
+                ..
+            } => Catalog::find_thread(&subject, &args.board),
+            _ => Thread::new(args.board, args.id.context("no thread id")?).ok(),
         }
     };
     if let Some(t) = thread {
