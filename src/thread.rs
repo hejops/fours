@@ -4,13 +4,14 @@ use std::io::Write;
 
 use anyhow::Context;
 use anyhow::Result;
+use ratatui::widgets::ListState;
 use serde::Deserialize;
 use serde_json::Value;
 
 use crate::string;
 
 /// Shared between Catalog and Thread.
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 pub struct Post {
     pub no: usize,
     com: Option<String>,
@@ -18,6 +19,22 @@ pub struct Post {
 
     // Only present in Catalog (?)
     pub sub: Option<String>,
+}
+
+impl Display for Post {
+    fn fmt(
+        &self,
+        f: &mut std::fmt::Formatter<'_>,
+    ) -> std::fmt::Result {
+        if self.com.is_some() {
+            writeln!(
+                f,
+                "{}",
+                string::selective_wrap(&self.decode().ok_or(std::fmt::Error)?),
+            )?;
+        }
+        Ok(())
+    }
 }
 
 impl Post {
@@ -103,7 +120,15 @@ impl Thread {
     // https://github.com/arijit79/minus/blob/main/examples/less-rs.rs
     pub fn page(&self) -> Result<()> {
         let output = minus::Pager::new();
+
+        let url = format!(
+            "https://boards.4chan.org/{}/thread/{}",
+            self.board, self.thread
+        );
+        output.set_prompt(string::leftpad(&url))?;
+
         let changes = || {
+            // TODO: update in here?
             output.push_str(self.to_string())?;
             // i have no idea what this syntax is
             Result::<()>::Ok(())
@@ -127,30 +152,22 @@ impl Display for Thread {
         &self,
         f: &mut std::fmt::Formatter<'_>,
     ) -> std::fmt::Result {
-        let url = format!(
-            "https://boards.4chan.org/{}/thread/{}",
-            self.board, self.thread
-        );
+        // let url = format!(
+        //     "https://boards.4chan.org/{}/thread/{}",
+        //     self.board, self.thread
+        // );
 
-        writeln!(f, "{}", string::leftpad(&url))?;
+        // writeln!(f, "{}", string::leftpad(&url))?;
 
         for post in self.posts.iter() {
             writeln!(f, "{}", string::leftpad(&post.no.to_string()))?;
-
             if let Some(tim) = &post.tim {
                 writeln!(f, "https://i.4cdn.org/{}/{}.jpg", self.board, tim)?;
             }
-
-            if post.com.is_some() {
-                writeln!(
-                    f,
-                    "{}",
-                    string::selective_wrap(&post.decode().ok_or(std::fmt::Error)?),
-                )?;
-            }
+            write!(f, "{}", post)?;
         }
 
-        writeln!(f, "{}", string::leftpad(&url))?;
+        // writeln!(f, "{}", string::leftpad(&url))?;
 
         Ok(())
     }
@@ -165,29 +182,50 @@ struct Page {
 // https://serde.rs/container-attrs.html#transparent
 #[serde(transparent)]
 /// Array of pages.
-// TODO: flatten pages? i.e. single unnested Vec<Post>
 pub struct Catalog {
     pages: Vec<Page>,
+
+    #[serde(skip)]
+    pub board: String,
+    #[serde(skip)]
+    pub state: ListState,
+    // Vec<&Post> is a rabbit hole of lifetimes that probably leads nowhere, as it is allegedly not
+    // possible to store a reference to self -- https://stackoverflow.com/a/27589566
+    #[serde(skip)]
+    pub posts: Vec<Post>,
 }
 
 impl Catalog {
-    pub fn find_thread(
-        subject: &str,
-        board: &str,
-    ) -> Option<Thread> {
+    pub fn new(board: &str) -> Result<Self> {
         let url = format!("https://a.4cdn.org/{}/catalog.json", board);
-        let resp = reqwest::blocking::get(url).ok()?.text().ok()?;
-        let cat: Catalog = serde_json::from_str(&resp).ok()?;
+        let resp = reqwest::blocking::get(url)?.text()?;
+        let mut cat: Self = serde_json::from_str(&resp)?;
+        cat.board = board.to_string();
+        cat.state = ListState::default();
 
-        for page in cat.pages {
-            if let Some(post) = page
-                .threads
-                .iter()
-                // meh
-                .find(|post| post.sub.is_some() && post.sub.as_ref().unwrap().contains(subject))
-            {
-                return Thread::new(board.to_string(), post.no).ok();
-            }
+        // flatten pages
+        cat.posts = cat
+            .pages
+            .iter()
+            .flat_map(|pg| pg.threads.iter())
+            .filter(|p| p.sub.is_some())
+            .cloned()
+            .collect();
+
+        Ok(cat)
+    }
+
+    pub fn find_thread(
+        &self,
+        subject: &str,
+    ) -> Option<Thread> {
+        if let Some(post) = self
+            .posts
+            .iter()
+            // meh
+            .find(|post| post.sub.is_some() && post.sub.as_ref().unwrap().contains(subject))
+        {
+            return Thread::new(self.board.to_string(), post.no).ok();
         }
         None
     }
