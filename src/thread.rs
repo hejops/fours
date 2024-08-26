@@ -3,7 +3,6 @@ use std::fs::File;
 use std::io::Write;
 
 use anyhow::Context;
-use anyhow::Result;
 use ratatui::widgets::ListState;
 use serde::Deserialize;
 use serde_json::Value;
@@ -65,13 +64,19 @@ pub struct Thread {
     posts: Vec<Post>,
 }
 impl Thread {
+    // Typically fails with 429
     pub fn new(
-        board: String,
+        // board: String,
+        board: &str,
         thread: usize,
-    ) -> Result<Self> {
+    ) -> anyhow::Result<Self> {
         let url = format!("https://a.4cdn.org/{}/thread/{}.json", board, thread);
-        let resp = reqwest::blocking::get(url)?.text()?;
-        let json: Value = serde_json::from_str(&resp)?;
+        let resp = match reqwest::blocking::get(url)?.error_for_status() {
+            Ok(resp) => resp,
+            Err(e) => return Err(e.into()),
+        };
+        assert_eq!(resp.status(), 200);
+        let json: Value = serde_json::from_str(&resp.text()?)?;
 
         // the raw json only contains the field 'posts'. ideally we want to deserialise
         // the raw json directly into Vec<Post>, but serde only lets us deserialise into
@@ -92,15 +97,18 @@ impl Thread {
             })
             .collect();
 
+        println!("{:#?}", posts);
+
         Ok(Self {
-            board,
+            board: board.to_string(),
             thread,
             posts,
         })
     }
 
-    /// Write to file
-    pub fn write(&self) -> Result<()> {
+    /// Write to file. Filename is determined by `self.board` and thread
+    /// subject.
+    pub fn write(&self) -> anyhow::Result<()> {
         let fname = format!(
             "/tmp/{}-{}",
             self.board,
@@ -118,7 +126,8 @@ impl Thread {
     }
 
     // https://github.com/arijit79/minus/blob/main/examples/less-rs.rs
-    pub fn page(&self) -> Result<()> {
+    // i should probably implement this as a Paragraph...
+    pub fn page(&self) -> anyhow::Result<()> {
         let output = minus::Pager::new();
 
         let url = format!(
@@ -131,7 +140,7 @@ impl Thread {
             // TODO: update in here?
             output.push_str(self.to_string())?;
             // i have no idea what this syntax is
-            Result::<()>::Ok(())
+            anyhow::Result::<()>::Ok(())
         };
 
         let pager = output.clone();
@@ -141,6 +150,9 @@ impl Thread {
         Ok(())
     }
 
+    pub fn render(&self) {
+        println!("{:#?}", self.posts);
+    }
     // TODO: update (fetch new posts)
 }
 
@@ -152,12 +164,13 @@ impl Display for Thread {
         &self,
         f: &mut std::fmt::Formatter<'_>,
     ) -> std::fmt::Result {
-        // let url = format!(
-        //     "https://boards.4chan.org/{}/thread/{}",
-        //     self.board, self.thread
-        // );
+        // why did i disable this?
+        let url = format!(
+            "https://boards.4chan.org/{}/thread/{}",
+            self.board, self.thread
+        );
 
-        // writeln!(f, "{}", string::leftpad(&url))?;
+        writeln!(f, "{}", string::leftpad(&url))?;
 
         for post in self.posts.iter() {
             writeln!(f, "{}", string::leftpad(&post.no.to_string()))?;
@@ -167,7 +180,7 @@ impl Display for Thread {
             write!(f, "{}", post)?;
         }
 
-        // writeln!(f, "{}", string::leftpad(&url))?;
+        writeln!(f, "{}", string::leftpad(&url))?;
 
         Ok(())
     }
@@ -196,15 +209,19 @@ pub struct Catalog {
 }
 
 impl Catalog {
-    pub fn new(board: &str) -> Result<Self> {
+    pub fn new(board: &str) -> anyhow::Result<Self> {
         let url = format!("https://a.4cdn.org/{}/catalog.json", board);
-        let resp = reqwest::blocking::get(url)?.text()?;
-        let mut cat: Self = serde_json::from_str(&resp)?;
-        cat.board = board.to_string();
-        cat.state = ListState::default();
+        let resp = match reqwest::blocking::get(url)?.error_for_status() {
+            Ok(resp) => resp,
+            Err(e) => return Err(e.into()),
+        };
+        assert_eq!(resp.status(), 200);
+        let mut catalog: Self = serde_json::from_str(&resp.text()?)?;
+        catalog.board = board.to_string();
+        catalog.state = ListState::default().with_selected(Some(0));
 
         // flatten pages
-        cat.posts = cat
+        catalog.posts = catalog
             .pages
             .iter()
             .flat_map(|pg| pg.threads.iter())
@@ -212,20 +229,21 @@ impl Catalog {
             .cloned()
             .collect();
 
-        Ok(cat)
+        Ok(catalog)
     }
 
     pub fn find_thread(
         &self,
         subject: &str,
     ) -> Option<Thread> {
+        // println!("finding {:#?}", subject);
         if let Some(post) = self
             .posts
             .iter()
             // meh
             .find(|post| post.sub.is_some() && post.sub.as_ref().unwrap().contains(subject))
         {
-            return Thread::new(self.board.to_string(), post.no).ok();
+            return Thread::new(&self.board, post.no).ok();
         }
         None
     }

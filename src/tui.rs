@@ -15,7 +15,9 @@ use ratatui::widgets::*;
 use crate::thread::Catalog;
 use crate::thread::Thread;
 
-// lazily copied from coggers
+// lazily copied from (an old version of) coggers
+
+// https://github.com/atanunq/viuer?tab=readme-ov-file#examples
 
 pub trait Menu {
     /// Responsible for the `ratatui` loop, and controlled by an event handler.
@@ -42,8 +44,8 @@ pub trait Menu {
     fn get_new_state(&mut self) -> io::Result<bool>;
 
     /// Responsible for rendering a single 'frame' in `menu`. Implementation
-    /// will vary depending on the data structure, and the intended widget to be
-    /// rendered.
+    /// will vary depending on the data structure, and the intended widget
+    /// to be rendered.
     fn render(
         &mut self,
         frame: &mut Frame,
@@ -64,7 +66,7 @@ impl Menu for Catalog {
 
         frame.render_stateful_widget(
             //
-            list, //.block(block),
+            list.highlight_symbol("> "), //.block(block),
             frame.size(),
             &mut self.state,
         );
@@ -75,32 +77,36 @@ impl Menu for Catalog {
     fn get_new_state(&mut self) -> io::Result<bool> {
         let noquit = io::Result::Ok(false);
 
-        if !event::poll(std::time::Duration::from_millis(50))? {
-            return noquit;
-        };
+        // if !event::poll(std::time::Duration::from_millis(50))? {
+        //     return noquit;
+        // };
+
         if let Event::Key(key) = event::read()? {
             if key.kind != event::KeyEventKind::Press {
                 return noquit;
             }
             match key.code {
-                KeyCode::Char('q') => return Ok(true),
+                // q is "reserved" by minus, which terminates the entire program
+                // KeyCode::Char('q') => return Ok(true),
                 KeyCode::Char('x') => return Ok(true),
                 KeyCode::Char('l') => {
-                    let p = self.posts.get(self.state.offset()).unwrap();
-                    let t = Thread::new(self.board.to_string(), p.no).unwrap();
+                    let p = self.posts.get(self.state.selected().unwrap()).unwrap();
+                    let t = Thread::new(&self.board, p.no).unwrap();
                     t.page().unwrap();
 
                     return noquit;
                 }
                 KeyCode::Char('j') => {
-                    if self.state.offset() < self.posts.len() {
-                        *self.state.offset_mut() += 1;
+                    let curr = self.state.selected().unwrap();
+                    if curr < self.posts.len() {
+                        self.state.select(Some(curr + 1));
                     }
                     return noquit;
                 }
                 KeyCode::Char('k') => {
-                    if self.state.offset() > 0 {
-                        *self.state.offset_mut() -= 1;
+                    let curr = self.state.selected().unwrap();
+                    if curr > 0 {
+                        self.state.select(Some(curr - 1));
                     }
                     return noquit;
                 }
